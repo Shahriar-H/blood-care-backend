@@ -29,9 +29,9 @@ cloudinary.config({
 
 const app = express();
 
-// app.use(cors({
-//     origin: "*"
-// }));
+app.use(cors({
+    origin: "*"
+}));
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }));
 
@@ -52,6 +52,7 @@ const isFoundDuplicate = async ({ table, query }) => {
     const db = await connection();
     const result = await db.collection(table).find(query).toArray();
     // console.log(result, table, query);
+    console.log(result);
     
     if (result?.length > 0) {
         // already exist
@@ -86,10 +87,8 @@ app.post("/insert-item", async (req, res) => {
         if (table === 'users') {
             // Await the isFoundDuplicate function
             const isDuplicate = await isFoundDuplicate({ query: {
-                $or: [
-                    { email: data?.email },
-                    { phone: data?.phone }
-                ]
+               mobile: data?.mobile 
+               
             }, table });
 
             if (isDuplicate) {
@@ -112,6 +111,12 @@ app.post("/insert-item", async (req, res) => {
         res.send({ status: 500, error, message: "Not Inserted!" });
     }
 });
+
+app.post("/emit-notification", (req,res)=>{
+    const {message} = req?.body
+    io.emit("Notification",`${message}`)
+    res.send({status:200, message:"suucess"})
+})
 
 
 app.post("/get-item",async (req,res)=>{
