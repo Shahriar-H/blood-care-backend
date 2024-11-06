@@ -11,6 +11,20 @@ const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 require('dotenv').config();
 
+const bcrypt = require('bcrypt');
+const smsSender = require("./sendsms");
+
+const hashPassword = async (password) => {
+  const saltRounds = 10; // Higher numbers mean stronger security but slower performance
+  const hash = await bcrypt.hash(password, saltRounds);
+  return hash;
+};
+
+const verifyPassword = async (password, hashedPassword) => {
+    const match = await bcrypt.compare(password, hashedPassword);
+    return match;
+};
+
 // Configuration
 // cloudinary.config({ 
 //     cloud_name: 'dqljmx6ai', 
@@ -51,8 +65,8 @@ const io = new Server(server, {
 const isFoundDuplicate = async ({ table, query }) => {
     const db = await connection();
     const result = await db.collection(table).find(query).toArray();
-    // console.log(result, table, query);
-    console.log(result);
+    console.log(result, table, query);
+ 
     
     if (result?.length > 0) {
         // already exist
@@ -83,13 +97,19 @@ const insertNotification = async (data) => {
 
 app.post("/insert-item", async (req, res) => {
     try {
-        const { data, table } = req?.body;
+        let { data, table } = req?.body;
         if (table === 'users') {
+            console.log(data);
             // Await the isFoundDuplicate function
             const isDuplicate = await isFoundDuplicate({ query: {
                mobile: data?.mobile 
                
             }, table });
+
+            const hasspass = await hashPassword(data?.password)
+            data = {...data, password:hasspass}
+            console.log(data);
+            
 
             if (isDuplicate) {
                 return res.send({ status: 203, message: "Email or Phone Already Exist" });
@@ -118,26 +138,80 @@ app.post("/emit-notification", (req,res)=>{
     res.send({status:200, message:"suucess"})
 })
 
+app.post("/forgotpassword",async (req,res)=>{
+    let { mobile, table } = req?.body;
+    console.log(mobile);
+    
+    const isDuplicate = await isFoundDuplicate({ query: {
+        mobile: mobile 
+        
+    }, table:'users' });
+    const newpassword = String(Math.floor(100000 + Math.random() * 900000));
+    console.log(newpassword);
+    
+    if (isDuplicate) {
+        const db = await connection()
+        
+        const hashedPasswordis = await hashPassword(newpassword)
+        const result = await db.collection(table).updateOne(
+            { mobile: mobile },          // Filter
+            { $set: { password:hashedPasswordis } }       // Update
+        );
+        const otp = `Blood Mate App password : ${newpassword}, Please change this password as soon as possible.`
+        smsSender(otp, "88"+mobile,res)
+
+        return res.send({status:200,result,message:"Check Sms"})
+        
+    }else{
+        return res.send({status:404,message:"Number not Registered"})
+    }
+})
+
 
 app.post("/get-item",async (req,res)=>{
 
     try {
         const {table,query,limit} = req?.body
         const db = await connection()
-        let myQuery = query;
+        let isLoginattempt = false;
+        let myQuery = {...query};
         if(query?.id){
             const theid = new ObjectId(query?.id)
             delete query['id']
             myQuery={...query,_id:theid}
         }
+
+
+        //hash check password
+        if(query?.password){
+            // const hasspass = await hashPassword(query?.password)
+            // console.log(hasspass);
+            isLoginattempt=true
+            delete myQuery['password']
+        }
+        console.log(myQuery, query);
+        
+
+        //pagination limit
         let itemlimit=0;
         if(limit){
             itemlimit=limit
         }
 
         const result = await db.collection(table).find(myQuery).sort({"_id": -1}).limit(itemlimit).toArray()
-
-        return res.send({status:200,result,message:"Success!"})
+        if(table==='users' && isLoginattempt ){
+            verifyPassword(query?.password,result[0]?.password).then((isvalid)=>{
+                if(isvalid){
+                    return res.send({status:200,result,message:"Success!"})
+                }else{
+                    return res.send({status:404,result:[],message:"Wrong Info!"})
+                }
+            })
+            
+        }else{
+            return res.send({status:200,result,message:"Success!"})
+        }
+        
 
     } catch (error) {
         return res.send({status:500,error,message:"Not Fetched!"})
