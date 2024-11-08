@@ -243,6 +243,27 @@ app.post("/delete-item",async (req,res)=>{
 })
 
 
+app.post("/update-password",async (req,res)=>{
+
+    try {
+        const {password,table,id} = req?.body
+        const db = await connection()
+        const objId = new ObjectId(id)
+        const hasspass = await hashPassword(password)
+        
+        console.log('data',{password,table,id});
+        const result = await db.collection(table).updateOne(
+            { _id:objId },          // Filter
+            { $set: { password:hasspass } }       // Update
+          );
+
+        res.send({status:200,result,message:"Success!"})
+
+    } catch (error) {
+        res.send({status:500,error,message:"Not Fetched!"})
+    }
+    
+})
 app.post("/update-item",async (req,res)=>{
 
     try {
